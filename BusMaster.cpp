@@ -9,19 +9,57 @@
 
 #define FREQ 80000000
 
+// potrebujeme praci s frontou
+
+void uart_init(uart_conf* conf, int ticks_per_baud, int rx_pin, int tx_pin, int rts_pin)
+{
+	conf->ticks_per_baud = ticks_per_baud;
+	conf->rx_pin = rx_pin;
+	conf->tx_pin = tx_pin;
+	conf->rts_pin = rts_pin;
+	
+	conf->rx_data = -1;
+	conf->tx_data = -1;
+}
+
+void send(uart_conf* conf, int data)
+{
+	while (conf->tx_data >= 0);
+	conf->tx_data = data;	
+}
+
+void send(uart_conf* conf, const char* str)
+{
+	while (*str != 0)
+	{
+		send(conf, (int) *str);
+		str++;
+	}
+}
+
+int receive(uart_conf* conf)
+{
+	while (conf->rx_data < 0);
+	int data = conf->rx_data;
+	conf->rx_data = -1;
+	return data;
+}
+
 int main()
 {
 	uart_frame frame;
 
 	uart_conf* conf = &frame.conf;
 
-	conf->ticks_per_baud = FREQ / 115200;	
-	conf->rx_pin = 0;
-	conf->tx_pin = 2;
-	conf->rts_pin = 16;
-	
-	conf->rx_data = -1;
-	conf->tx_data = -1;
+	uart_init(conf, FREQ / (4 * 115200), 0, 2, 16);
+
+	bit_set(DIRA, 23);
+	bit_set(OUTA, 23);
+	waitcnt(CNT + FREQ / 2);
+	bit_clear(OUTA, 23);
+
+	//send(conf, "INIT\r\n");
+	send(conf, '!');
 
 	extern unsigned int _load_start_uart_rx_cog[];
 	cognew(_load_start_uart_rx_cog, conf);
@@ -29,21 +67,20 @@ int main()
 	extern unsigned int _load_start_uart_tx_cog[];
 	cognew(_load_start_uart_tx_cog, conf);
 
-	while (false)
-	{
-		conf->tx_data = 'a';
-		while (conf->tx_data >= 0);
-		waitcnt(CNT + 80000000);
-	}     
-
 	while (true)
 	{
-		while (conf->rx_data < 0);
-		int data = conf->rx_data;
-		conf->rx_data = -1;
-		while (conf->tx_data >= 0);
-		conf->tx_data = data;
-		// a moh by bliknout
+		int data = receive(conf);
+
+		if (data == '\r' || data == '\n')
+		{
+			send(conf, '\r');
+			send(conf, '\n');
+
+		}
+		else
+		{
+			send(conf, data);
+		}
 	}
 
 	return 0;
