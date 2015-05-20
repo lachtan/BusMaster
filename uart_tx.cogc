@@ -1,0 +1,56 @@
+// uart_tx
+
+#include <propeller.h>
+#include <stdint.h>
+#include "BusMaster.h"
+#include "coglib.h"
+
+void main(uart_conf* conf)
+{
+	int bit;
+	
+	uart_conf* _conf = conf;
+	uint32_t ticks_per_baud = conf->ticks_per_baud;
+	volatile int* tx_data = &(conf->tx_data);
+	int rts_pin = conf->rts_pin;
+	int tx_pin = conf->tx_pin;
+
+	bit_change(DIRA, rts_pin, OUT_DIR);
+	bit_change(DIRA, tx_pin, OUT_DIR);
+
+	bit_clear(OUTA, rts_pin);
+	bit_set(OUTA, tx_pin);
+
+	while (1)
+	{
+		while (_conf->tx_data < 0);
+
+		bit_set(OUTA, 16);
+
+		int data = *tx_data;
+		*tx_data = -1;
+
+		bit_set(OUTA, rts_pin);
+		bit_clear(OUTA, tx_pin);
+
+		uint32_t next_time = CNT;
+		next_time += ticks_per_baud;
+		waitcnt(next_time);	
+
+		for (bit = 0; bit < 8; bit++)
+		{
+			bit_change(OUTA, tx_pin, data & 1);
+			data = data >> 1;
+			
+			next_time += ticks_per_baud;
+			waitcnt(next_time);
+		}
+		
+		bit_set(OUTA, tx_pin);
+		
+		next_time += ticks_per_baud;
+		waitcnt(next_time);
+		
+		bit_clear(OUTA, rts_pin);
+	}
+}

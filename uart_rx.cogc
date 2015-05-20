@@ -1,0 +1,64 @@
+// uart_rx
+
+#include <propeller.h>
+#include <stdint.h>
+#include "BusMaster.h"
+#include "coglib.h"
+
+void main(uart_conf* conf)
+{
+	uint32_t next_time;
+	int data;
+	
+	uint32_t ticks_per_baud = conf->ticks_per_baud;
+	volatile int* rx_data = &(conf->rx_data);
+	int rx_pin = conf->rx_pin;
+
+	bit_change(DIRA, rx_pin, IN_DIR);
+
+	while (1)
+	{
+		while (*rx_data >= 0);
+
+		data = 0;
+
+		waitpeq(0, 1 << rx_pin);
+
+		uint32_t next_time = CNT;
+		next_time += ticks_per_baud >> 2;
+		
+		int start_bit = bit_get(INA, rx_pin);
+		if (start_bit)
+		{		
+			*rx_data = -2;
+			continue;
+		}
+
+		int i;
+		for (i = 0; i < 8; i++)
+		{
+			next_time += ticks_per_baud;
+			waitcnt(next_time);
+			
+			int bit = bit_get(INA, rx_pin);
+			data = (data >> 1);
+			if (bit)
+			{
+				data |= 0x80;
+			}
+		}
+
+		next_time += ticks_per_baud;
+		waitcnt(next_time);
+		
+		int stop_bit = bit_get(INA, rx_pin);
+		if (!stop_bit)
+		{
+			waitpeq(0xffff, 1 << rx_pin);
+			*rx_data = -3;
+			continue;
+		}
+
+		*rx_data = data;
+	}	
+}
