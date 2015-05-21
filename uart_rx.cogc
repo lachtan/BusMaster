@@ -18,10 +18,11 @@ void main(uart_conf* conf)
 
 	while (1)
 	{
-		while (*rx_data >= 0);
+		// nemuzu si dovolit cekat, mohl bych ztratit start bit
+		// nic horsiho nez ze ztratim znak se nestane
+		//while (*rx_data >= 0);
 
 		data = 0;
-
 		waitpeq(0, 1 << rx_pin);
 
 		uint32_t next_time = CNT;
