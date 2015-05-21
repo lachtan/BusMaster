@@ -9,8 +9,6 @@
 
 #define FREQ 80000000
 
-// potrebujeme praci s frontou
-
 void uart_init(uart_conf* conf, int ticks_per_baud, int rx_pin, int tx_pin, int rts_pin)
 {
 	conf->ticks_per_baud = ticks_per_baud;
@@ -22,17 +20,40 @@ void uart_init(uart_conf* conf, int ticks_per_baud, int rx_pin, int tx_pin, int 
 	conf->tx_data = -1;
 }
 
-void send(uart_conf* conf, int data)
+void queue_init(uart_queue& queue)
 {
-	while (conf->tx_data >= 0);
-	conf->tx_data = data;	
+	queue.head = 0;
+	queue.length = 0;
 }
 
-void send(uart_conf* conf, const char* str)
+int queue_get(uart_queue& queue)
+{
+	if (queue.length == 0)
+	{
+		return -1;
+	}
+	int data = queue.buffer[queue.head];
+	queue.head = (queue.head + 1) & QUEUE_MASK;
+	queue.length--;
+	return data;
+}
+
+int queue_put(uart_queue& queue, int data)
+{
+	if (queue.length == QUEUE_LENGTH)
+	{
+		return false;
+	}	
+	queue.buffer[(queue.head + queue.length) & QUEUE_MASK] = data;
+	queue.length++;
+	return true;
+}
+
+void send(uart_queue& queue, const char* str)
 {
 	while (*str != 0)
 	{
-		send(conf, (int) *str);
+		queue_put(queue, *str);
 		str++;
 	}
 }
@@ -45,21 +66,29 @@ int receive(uart_conf* conf)
 	return data;
 }
 
-int main()
+void leds_init()
 {
+	for (int led = 16; led <= 23; led++)
+	{
+		bit_change(DIRA, led, OUT_DIR);
+		bit_clr(OUTA, led);
+	}
+}
+
+int main()
+{	
 	uart_frame frame;
-
 	uart_conf* conf = &frame.conf;
+	uart_queue queue;
 
-	uart_init(conf, FREQ / (4 * 115200), 0, 2, 16);
+	leds_init();
+	uart_init(conf, FREQ / (1 * 115200), 0, 2, 16);
+	queue_init(queue);
 
 	bit_set(DIRA, 23);
 	bit_set(OUTA, 23);
 	waitcnt(CNT + FREQ / 2);
 	bit_clear(OUTA, 23);
-
-	//send(conf, "INIT\r\n");
-	send(conf, '!');
 
 	extern unsigned int _load_start_uart_rx_cog[];
 	cognew(_load_start_uart_rx_cog, conf);
@@ -67,19 +96,33 @@ int main()
 	extern unsigned int _load_start_uart_tx_cog[];
 	cognew(_load_start_uart_tx_cog, conf);
 
+	send(queue, "READY\r\n");
+
+	int data;
 	while (true)
-	{
-		int data = receive(conf);
-
-		if (data == '\r' || data == '\n')
+	{		
+		data = conf->rx_data;
+		if (data >= 0)
 		{
-			send(conf, '\r');
-			send(conf, '\n');
-
+			conf->rx_data = -1;
+			if (data == '\r' || data == '\n')
+			{
+				queue_put(queue, '\r');
+				queue_put(queue, '\n');
+			}
+			else
+			{
+				queue_put(queue, data);
+			}
 		}
-		else
+
+		if (conf->tx_data < 0)
 		{
-			send(conf, data);
+			data = queue_get(queue);
+			if (data >= 0)
+			{
+				conf->tx_data = data;
+			}
 		}
 	}
 

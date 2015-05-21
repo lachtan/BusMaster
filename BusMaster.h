@@ -3,14 +3,25 @@
 
 #include <stdint.h>
 
+#define QUEUE_LENGTH 8
+#define QUEUE_MASK 7
+
+typedef struct
+{
+	uint8_t buffer[QUEUE_LENGTH];
+	uint8_t head;
+	uint8_t length;
+}
+uart_queue;
+
 typedef struct
 {
 	uint32_t ticks_per_baud;
-	volatile int rx_data;
-	volatile int tx_data;
 	int rts_pin;
 	int rx_pin;
 	int tx_pin;
+	volatile int rx_data;
+	volatile int tx_data;
 }
 uart_conf;
 
